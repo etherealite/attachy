@@ -1,77 +1,36 @@
-<?php 
+<?php namespace Attachy\Filer;
+
+use Attachy\Storage;
+use Attachy\Upload;
 
 class Filer {
 
   public static $form_key;
-  public static $base_path;
-  public static $ext;
 
-
-  /**
-   * make sure the upload is valid
+  /*
+   * The Eloquent model instance to draw from.
    *
-   * @param  array      $input
-   * @return boolean
+   * @var Eloquent
    */
-  public static function is_upload($input)
-  {
-    if ( ! is_array($input))
-    {
-      return false;
-    }
+  public $model;
 
-    $match_keys = array(
-      "name",
-      "type",
-      "tmp_name",
-      "error",
-      "size"
-    );
-    foreach(array_keys($input) as $key)
-    {
-      if ( ! in_array($key, $match_keys))
-      {
-        return false;
-      }
-    }
-    if ( ! is_uploaded_file($input['tmp_name']))
-    {
-      return false;
-    }
+  /*
+   * The key for the aloquent attribute save filekeys.
+   *
+   * @var string
+   */
+  public $column;
 
-    return true;
-  }
+  /* Uploader instance to hold and validate post meta.
+   *
+   * @var Upload
+   */
+  public $upload;
 
 
-  public static function get_temp($input)
-  {
-    return $input['tmp_name'];
-  }
 
-
-  public static function store($file)
-  {
-    $key = uniqid();
-    $self = new static;
-    $store_dir = $self->store_dir;
-    $ext = static::$extension;
-    $destination = static::key_path($key, $store_dir, $ext);
-    mkdir(dirname($destination), 1771, true);
-    rename($file, $destination);
-    return $key;
-  }
-
-
-  public static function key_path($key, $base_path, $ext = null)
-  {
-    $nibbles = substr($key, -4);
-    $reverse = strrev($nibbles);
-    $dirname = $base_path.DS.chunk_split($reverse, 2, DS);
-    $absolute = $dirname.$key.'.'.$ext;
-    return $absolute;
-  }
-
-
+  // TODO This is cruft until I implement  some  way of registering
+  // these listeners
   public static function listen($class = null)
   {
     if ($class === null) $class = static::$listen_class;
@@ -81,57 +40,131 @@ class Filer {
     });
   }
 
-
-  public function __construct($column = null, $model = null)
+  /*
+   * Create a new Filer instance
+   *
+   * @param string     file_column
+   * @param Eloquent   $model
+   */
+  public function __construct($attribute = null, $model = null)
   {
-    $this->column = $column;
+    // the name of the attribute where we store
+    // file names.
+    $this->column = $attribute;
     $this->model = $model;
-    $this->store_dir = $this->store_dir();
   }
 
 
   public function save()
   {
-    $column = $this->column;
-    // $attribute not yet written to db
-    $form_key = static::$form_key;
-    $attribute = $this->model->$form_key;
-    // todo remove this hack to work around broken
-    // eloquent __unset magic method after they
-    // fix it in the core.
-    $attributes =& $this->model->attributes;
-    unset($attributes[$form_key]);
-
-    $file = '';
-    if (static::is_upload($attribute))
-    {
-      $file = static::get_temp($attribute);
-    }
-    elseif (request::cli() and is_string($attribute))
-    {
-      $file = $attribute;
-    }
-    else
+    // model attribute where file post meta or file path
+    // string is located.
+    $attribute = $this->$form_key;
+    $intercepted = $this->intercept($this->model, $attribute);
+    if( empty($intercepted))
     {
       return null;
     }
+    // if the request is coming from the cli you can optionaly
+    // use a string to point directly to a local file.
+    elseif (Request::cli() and is_string($intercepted))
+    {
+      $tempfile = $intercepted;
+    }
+    // assuming this upload is from a post request.
+    else
+    {
+      $upload = new Upload($intercepted);
+      if($upload->is_valid())
+      {
+        $tempfile = $upload->tempfile;
+        $extension = $upload->extension;
+        $this->upload = $upload;
+      }
+      else 
+      {
+        throw new Exception("upload invalid");
+      }
+    }
 
+    // subclasses can optionally end processing of  the upload by
+    // overloading this method.
     if ( !  $this->before_store($file)) return null;
 
-    $file_key = static::store($file);
-    $this->model->$column = $file_key;
+    // get the uploaded's file extension
+    $storage = $this->get_storage();
+    $storage->store($tempfile, $extension);
 
-    return $file_key;
+    // store the file to the repository
+    $filekey = $storage->key;
+    $column = $this->column;
+    $this->model->$column = $filekey;
+
+    return $storage->path($filekey);
   }
 
 
-  // you must override this function to set the store
-  // directory.
-  public function store_dir() { return null; }
+  /*
+   * retieve the path to the stored for
+   * urls.
+   * 
+   * @return string
+   */
+  public function retrieve()
+  {
+    $storage = $this->get_storage();
+    $column = $this->column;
+    $filekey = $this->model->$column;
+    return $storage->path($filekey);
+  }
 
 
-  // optionally overide this method to perform actions
-  // on the file before the store() method is run;
+  /*
+   * get file meta from model and remove it from
+   * model attributes.
+   *
+   * @param    Eloquent  $model
+   * @param    string    $attribute
+   * @return   mixed
+   */
+  public function intercept($model, $attribute)
+  {
+    $key = $attribute;
+    // todo remove this hack to work around broken eloquent __unset
+    // magic method after they fix it in the core.
+    $attributes =& $model->attributes;
+    if ( ! isset($attributes[$key]))
+    {
+      return null;
+    }
+    $value = $attributes[$key];
+    unset($attributes[$key]);
+    return $value;
+  }
+
+
+  public function get_storage($key)
+  {
+    return IoC::resolve('attachy.storage');
+  }
+
+
+  /*
+   * The string representation of this object.
+   *
+   * @return  string
+   */
+  public function __toString()
+  {
+    return $this->retrieve();
+  }
+
+  // you must override this function to set the store directory.
+  public function directory() { return null; }
+
+
+    // optionally overide this method to perform actions on the file 
+    // before the store() method is run;
   public function before_store($file) { return true; }
 
 
