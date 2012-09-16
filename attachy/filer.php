@@ -1,11 +1,28 @@
-<?php namespace Attachy\Filer;
+<?php namespace Attachy;
 
-use Attachy\Storage;
-use Attachy\Upload;
+#use Attachy\Storage;
+#use Attachy\Upload;
+use Laravel\Request;
 
 class Filer {
 
-  public static $form_key;
+  /*
+   * object pool for caching instances
+   *
+   * @todo emplement methods to actually use this.
+   *
+   * @var array
+   */
+  public static $instances = array();
+
+
+  /*
+   * The key for the eloquent $attribute property that we're
+   * going to intercept.
+   *
+   * @var string
+   */
+  public $form_key;
 
   /*
    * The Eloquent model instance to draw from.
@@ -28,6 +45,16 @@ class Filer {
   public $upload;
 
 
+  /*
+   * Return a new filer instance.to a client eloquent model.
+   * @todo register the instance so we can respond to eloquent
+   * 'saving' events. Is this the flyweight pattern?
+   */
+  public static function attach($column, $model)
+  {
+      return new static($column, $model);
+  }
+
 
   // TODO This is cruft until I implement  some  way of registering
   // these listeners
@@ -40,17 +67,21 @@ class Filer {
     });
   }
 
+
   /*
    * Create a new Filer instance
    *
-   * @param string     file_column
+   * @todo cache instances of this class in a object pool for better
+   * performance
+   *
+   * @param string     $column
    * @param Eloquent   $model
    */
-  public function __construct($attribute = null, $model = null)
+  public function __construct($column = null, $model = null)
   {
-    // the name of the attribute where we store
+    // the name of the column where we store
     // file names.
-    $this->column = $attribute;
+    $this->column = $column;
     $this->model = $model;
   }
 
@@ -59,14 +90,15 @@ class Filer {
   {
     // model attribute where file post meta or file path
     // string is located.
-    $attribute = $this->$form_key;
+    $attribute = $this->form_key;
     $intercepted = $this->intercept($this->model, $attribute);
     if( empty($intercepted))
     {
       return null;
     }
     // if the request is coming from the cli you can optionaly
-    // use a string to point directly to a local file.
+    // use a string to point directly to a local file. This will
+    // skip any validation in this or the before_validate() method.
     elseif (Request::cli() and is_string($intercepted))
     {
       $tempfile = $intercepted;
@@ -74,27 +106,28 @@ class Filer {
     // assuming this upload is from a post request.
     else
     {
+      // subclasses can optionally end processing of  the upload by
+      // overloading this method and returning false.
       $upload = new Upload($intercepted);
-      if($upload->is_valid())
+      if ($this->before_validate($upload) === false) return null;
+      if(! $upload->is_valid())
       {
-        $tempfile = $upload->tempfile;
-        $extension = $upload->extension;
-        $this->upload = $upload;
-      }
-      else 
-      {
-        throw new Exception("upload invalid");
+
+        throw new \Exception(print_r($upload->messages, true));
       }
     }
-
-    // subclasses can optionally end processing of  the upload by
-    // overloading this method.
-    if ( !  $this->before_store($file)) return null;
-
-    // get the uploaded's file extension
+    $tempfile = $upload->tempfile;
     $storage = $this->get_storage();
-    $storage->store($tempfile, $extension);
+    // subclasses can optionally end processing of  the upload by
+    // overloading this method and returning false.
+    if ( $this->before_store($storage, $upload) === false)
+    {
+      return null;
+    }
 
+    $storage->store($tempfile, $name);
+
+    die('shiit');
     // store the file to the repository
     $filekey = $storage->key;
     $column = $this->column;
@@ -105,8 +138,7 @@ class Filer {
 
 
   /*
-   * retieve the path to the stored for
-   * urls.
+   * retieve the path to the file.
    * 
    * @return string
    */
@@ -120,8 +152,7 @@ class Filer {
 
 
   /*
-   * get file meta from model and remove it from
-   * model attributes.
+   * get post meta from Eloquent dynamic attribute and unset it.
    *
    * @param    Eloquent  $model
    * @param    string    $attribute
@@ -143,9 +174,10 @@ class Filer {
   }
 
 
-  public function get_storage($key)
+  public function get_storage()
   {
-    return IoC::resolve('attachy.storage');
+    #return IoC::resolve('attachy.storage');
+    throw new \Exception("ghetto storage factory method must be overriden");
   }
 
 
@@ -163,6 +195,7 @@ class Filer {
   public function directory() { return null; }
 
 
+  public function before_validate($upload) { return true; }
     // optionally overide this method to perform actions on the file 
     // before the store() method is run;
   public function before_store($file) { return true; }

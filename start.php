@@ -4,7 +4,9 @@ Autoloader::directories(array(
   path('app').'attachy'
 ));
 
-Autoloader::map(array(
-  'Filer' => __DIR__.'/attachy/filer.php'
+Autoloader::namespaces(array(
+  'Attachy' => __DIR__.'/attachy'
 ));
+
+Autoloader::alias('\Attachy\Filer', 'Filer');
 

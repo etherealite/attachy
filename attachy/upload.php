@@ -1,12 +1,20 @@
-<?php 
+<?php namespace Attachy;
 
 
 class Upload {
 
-  public $post_meta;
-  public $valid;
+  public $blacklist = array(
+    "php",
+    "js",
+    "html",
+    "css"
+  );
 
-  public $keys = array(
+  private $post_meta;
+
+  private $valid;
+
+  private $valid_keys = array(
     "name",
     "type",
     "tmp_name",
@@ -14,70 +22,54 @@ class Upload {
     "size"
   );
 
-  public $blacklist = array(
-    "php",
-    "js",
-    "html"
-  );
+  private $messages;
 
 
   public function __construct($post_meta = null)
   {
-    if ( ! is_null($post_meta)) $this->post_meta;
+    if ( ! is_null($post_meta)) $this->post_meta = $post_meta;
   }
 
 
   public function is_valid()
   {
-    if ( is_null ($this->valid))
+    $valid_keys = $this->valid_keys;
+    if (empty($this->post_meta))
     {
-      return $this->validate($this->post_meta);
+      throw new \Exception('post_meta is not set');
+    }
+    elseif ( $this->valid === null)
+    {
+      $this->valid = $this->validate($this->post_meta, $valid_keys);
+      return $this->valid;
     }
     return $this->valid;
   }
 
 
-  public function validate($post_meta = null)
+  public function validate($post_meta, $valid_keys)
   {
-    if ( is_null($post_meta))
+    if ( ! is_array($post_meta))
     {
-      $post_meta = $this->post_meta;
-    }
-
-    $valid = $this->check($post_meta);
-    $this->valid = $valid;
-    return $valid;
-  }
-
-
-  public function augment($post_meta)
-  {
-    $extension = pathinfo($post_meta['tmp_name'], PATHINFO_EXTENSION);
-    $post_meta['extension'] = $extension;
-  }
-
-
-  public function check($post_meta)
-  {
-    if ( ! is_array($input))
-    {
+      $this->messages[] = "no upload meta found";
       return false;
     }
-
-    $keys = $this->keys;
-    foreach(array_keys($input) as $key)
+    $is_valid = true;
+    foreach($valid_keys as $key)
     {
-      if ( ! in_array($key, $match_keys))
+      if ( ! in_array($key, array_keys($post_meta)))
       {
-        return false;
+        $this->messages[] = "post request missing '{$key}' data.";
+        $is_valid = false;
       }
     }
-    if ( ! is_uploaded_file($input['tmp_name']))
+    if ( ! is_uploaded_file($post_meta['tmp_name']))
     {
-      return false;
+      $this->messages[] = "Temp file: {$post_meta['tmp_name']} is not an".
+       " 'uploaded file'";
+      $is_valid = false;
     }
-
-    return true;
+    return $is_valid;
   }
 
 
@@ -87,9 +79,13 @@ class Upload {
     {
       return $this->post_meta[$key];
     }
-    if ($key === "tempfile")
+    elseif ($key === "tempfile")
     {
       return $this->post_meta['tmp_name'];
+    }
+    elseif($key === "messages")
+    {
+      return $this->messages;
     }
   }
 
