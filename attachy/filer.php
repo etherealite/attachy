@@ -112,13 +112,12 @@ class Filer {
       if ($this->before_validate($upload) === false) return null;
       if(! $upload->is_valid())
       {
-
         throw new \Exception(print_r($upload->messages, true));
       }
+      $tempfile = $upload->tempfile;
     }
-    $tempfile = $upload->tempfile;
     $storage = $this->get_storage();
-    // subclasses can optionally end processing of  the upload by
+    // subclasses can optionally end processing of the upload by
     // overloading this method and returning false.
     if ( $this->before_store($storage, $upload) === false)
     {
@@ -127,7 +126,6 @@ class Filer {
 
     $storage->store($tempfile, $name);
 
-    die('shiit');
     // store the file to the repository
     $filekey = $storage->key;
     $column = $this->column;
@@ -154,6 +152,8 @@ class Filer {
   /*
    * get post meta from Eloquent dynamic attribute and unset it.
    *
+   * @todo remove hack to unset Eloquent attributes by reference.
+   *
    * @param    Eloquent  $model
    * @param    string    $attribute
    * @return   mixed
@@ -161,8 +161,6 @@ class Filer {
   public function intercept($model, $attribute)
   {
     $key = $attribute;
-    // todo remove this hack to work around broken eloquent __unset
-    // magic method after they fix it in the core.
     $attributes =& $model->attributes;
     if ( ! isset($attributes[$key]))
     {
