@@ -1,77 +1,63 @@
-<?php 
+<?php namespace Attachy;
+
+#use Attachy\Storage;
+#use Attachy\Upload;
+use Laravel\Request;
 
 class Filer {
 
-  public static $form_key;
-  public static $base_path;
-  public static $ext;
-
-
-  /**
-   * make sure the upload is valid
+  /*
+   * object pool for caching instances
    *
-   * @param  array      $input
-   * @return boolean
+   * @todo emplement methods to actually use this.
+   *
+   * @var array
    */
-  public static function is_upload($input)
+  public static $instances = array();
+
+
+  /*
+   * The key for the eloquent $attribute property that we're
+   * going to intercept.
+   *
+   * @var string
+   */
+  public $form_key;
+
+  /*
+   * The Eloquent model instance to draw from.
+   *
+   * @var Eloquent
+   */
+  public $model;
+
+  /*
+   * The key for the aloquent attribute save filekeys.
+   *
+   * @var string
+   */
+  public $column;
+
+  /* Uploader instance to hold and validate post meta.
+   *
+   * @var Upload
+   */
+  public $upload;
+
+
+  /*
+   * Return a new filer instance.to a client eloquent model.
+   * @todo register the instance so we can respond to eloquent
+   * 'saving' events. Is this the flyweight pattern?
+   */
+  public static function attach($column, $model)
   {
-    if ( ! is_array($input))
-    {
-      return false;
-    }
-
-    $match_keys = array(
-      "name",
-      "type",
-      "tmp_name",
-      "error",
-      "size"
-    );
-    foreach(array_keys($input) as $key)
-    {
-      if ( ! in_array($key, $match_keys))
-      {
-        return false;
-      }
-    }
-    if ( ! is_uploaded_file($input['tmp_name']))
-    {
-      return false;
-    }
-
-    return true;
+      return new static($column, $model);
   }
 
 
-  public static function get_temp($input)
-  {
-    return $input['tmp_name'];
-  }
-
-
-  public static function store($file)
-  {
-    $key = uniqid();
-    $self = new static;
-    $store_dir = $self->store_dir;
-    $ext = static::$extension;
-    $destination = static::key_path($key, $store_dir, $ext);
-    mkdir(dirname($destination), 1771, true);
-    rename($file, $destination);
-    return $key;
-  }
-
-
-  public static function key_path($key, $base_path, $ext = null)
-  {
-    $nibbles = substr($key, -4);
-    $reverse = strrev($nibbles);
-    $dirname = $base_path.DS.chunk_split($reverse, 2, DS);
-    $absolute = $dirname.$key.'.'.$ext;
-    return $absolute;
-  }
-
-
+  // TODO This is cruft until I implement  some  way of registering
+  // these listeners
   public static function listen($class = null)
   {
     if ($class === null) $class = static::$listen_class;
@@ -82,56 +68,134 @@ class Filer {
   }
 
 
+  /*
+   * Create a new Filer instance
+   *
+   * @todo cache instances of this class in a object pool for better
+   * performance
+   *
+   * @param string     $column
+   * @param Eloquent   $model
+   */
   public function __construct($column = null, $model = null)
   {
+    // the name of the column where we store
+    // file names.
     $this->column = $column;
     $this->model = $model;
-    $this->store_dir = $this->store_dir();
   }
 
 
   public function save()
   {
-    $column = $this->column;
-    // $attribute not yet written to db
-    $form_key = static::$form_key;
-    $attribute = $this->model->$form_key;
-    // todo remove this hack to work around broken
-    // eloquent __unset magic method after they
-    // fix it in the core.
-    $attributes =& $this->model->attributes;
-    unset($attributes[$form_key]);
-
-    $file = '';
-    if (static::is_upload($attribute))
+    // model attribute where file post meta or file path
+    // string is located.
+    $attribute = $this->form_key;
+    $intercepted = $this->intercept($this->model, $attribute);
+    if( empty($intercepted))
     {
-      $file = static::get_temp($attribute);
+      return null;
     }
-    elseif (request::cli() and is_string($attribute))
+    // if the request is coming from the cli you can optionaly
+    // use a string to point directly to a local file. This will
+    // skip any validation in this or the before_validate() method.
+    elseif (Request::cli() and is_string($intercepted))
     {
-      $file = $attribute;
+      $tempfile = $intercepted;
     }
+    // assuming this upload is from a post request.
     else
+    {
+      // subclasses can optionally end processing of  the upload by
+      // overloading this method and returning false.
+      $upload = new Upload($intercepted);
+      if ($this->before_validate($upload) === false) return null;
+      if(! $upload->is_valid())
+      {
+        throw new \Exception(print_r($upload->messages, true));
+      }
+      $tempfile = $upload->tempfile;
+    }
+    $storage = $this->get_storage();
+    // subclasses can optionally end processing of the upload by
+    // overloading this method and returning false.
+    if ( $this->before_store($storage, $upload) === false)
     {
       return null;
     }
 
-    if ( !  $this->before_store($file)) return null;
+    $storage->store($tempfile, $name);
 
-    $file_key = static::store($file);
-    $this->model->$column = $file_key;
+    // store the file to the repository
+    $filekey = $storage->key;
+    $column = $this->column;
+    $this->model->$column = $filekey;
 
-    return $file_key;
+    return $storage->path($filekey);
   }
 
 
-  // you must override this function to set the store
-  // directory.
-  public function store_dir() { return null; }
+  /*
+   * retieve the path to the file.
+   * 
+   * @return string
+   */
+  public function retrieve()
+  {
+    $storage = $this->get_storage();
+    $column = $this->column;
+    $filekey = $this->model->$column;
+    return $storage->path($filekey);
+  }
 
 
-  // optionally overide this method to perform actions
-  // on the file before the store() method is run;
+  /*
+   * get post meta from Eloquent dynamic attribute and unset it.
+   *
+   * @todo remove hack to unset Eloquent attributes by reference.
+   *
+   * @param    Eloquent  $model
+   * @param    string    $attribute
+   * @return   mixed
+   */
+  public function intercept($model, $attribute)
+  {
+    $key = $attribute;
+    $attributes =& $model->attributes;
+    if ( ! isset($attributes[$key]))
+    {
+      return null;
+    }
+    $value = $attributes[$key];
+    unset($attributes[$key]);
+    return $value;
+  }
+
+
+  public function get_storage()
+  {
+    #return IoC::resolve('attachy.storage');
+    throw new \Exception("ghetto storage factory method must be overriden");
+  }
+
+
+  /*
+   * The string representation of this object.
+   *
+   * @return  string
+   */
+  public function __toString()
+  {
+    return $this->retrieve();
+  }
+
+  // you must override this function to set the store directory.
+  public function directory() { return null; }
+
+
+  public function before_validate($upload) { return true; }
+    // optionally overide this method to perform actions on the file 
+    // before the store() method is run;
   public function before_store($file) { return true; }
 
 
