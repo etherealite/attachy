@@ -1,10 +1,10 @@
 <?php namespace Attachy;
 
-#use Attachy\Storage;
-#use Attachy\Upload;
+use Attachy\Storage;
 use Laravel\Request;
+use Laravel\Database\Eloquent\Model as Eloquent;
 
-class Filer {
+abstract class Filer {
 
   /*
    * object pool for caching instances
@@ -40,24 +40,38 @@ class Filer {
 
   /* Uploader instance to hold and validate post meta.
    *
-   * @var Upload
+   * @var Attachy\Upload
    */
   public $upload;
 
 
   /*
    * Return a new filer instance.to a client eloquent model.
+   *
    * @todo register the instance so we can respond to eloquent
    * 'saving' events. Is this the flyweight pattern?
+   *
+   * @param string     $column
+   * @param Eloquent   $model
+   *
+   * @return Filer
    */
   public static function attach($column, $model)
   {
-      return new static($column, $model);
+      $filer =  new static($column, $model);
+      $filer->column = $column;
+      $filer->model = $model;
+      return $filer;
   }
 
 
-  // TODO This is cruft until I implement  some  way of registering
-  // these listeners
+  /*
+   * Attach a listner to an eloquent event for an instance of this
+   * class.
+   *
+   * @todo This is cruft at the moment. Need to implement listeners
+   * later on.
+   */
   public static function listen($class = null)
   {
     if ($class === null) $class = static::$listen_class;
@@ -68,55 +82,31 @@ class Filer {
   }
 
 
-  /*
-   * Create a new Filer instance
-   *
-   * @todo cache instances of this class in a object pool for better
-   * performance
-   *
-   * @param string     $column
-   * @param Eloquent   $model
-   */
-  public function __construct($column = null, $model = null)
-  {
-    // the name of the column where we store
-    // file names.
-    $this->column = $column;
-    $this->model = $model;
-  }
-
-
   public function save()
   {
     // model attribute where file post meta or file path
     // string is located.
     $attribute = $this->form_key;
     $intercepted = $this->intercept($this->model, $attribute);
-    if( empty($intercepted))
-    {
-      return null;
-    }
+    if( empty($intercepted)) return null;
     // if the request is coming from the cli you can optionaly
     // use a string to point directly to a local file. This will
     // skip any validation in this or the before_validate() method.
     elseif (Request::cli() and is_string($intercepted))
     {
       $tempfile = $intercepted;
+      $realname = basename($intercepted);
     }
     // assuming this upload is from a post request.
     else
     {
       // subclasses can optionally end processing of  the upload by
       // overloading this method and returning false.
-      $upload = new Upload($intercepted);
-      if ($this->before_validate($upload) === false) return null;
-      if(! $upload->is_valid())
-      {
-        throw new \Exception(print_r($upload->messages, true));
-      }
+      $upload = $this->validate($intercepted);
       $tempfile = $upload->tempfile;
+      $realname = $upload->name;
     }
-    $storage = $this->get_storage();
+    $storage = $this->storage();
     // subclasses can optionally end processing of the upload by
     // overloading this method and returning false.
     if ( $this->before_store($storage, $upload) === false)
@@ -124,14 +114,27 @@ class Filer {
       return null;
     }
 
-    $storage->store($tempfile, $name);
+    $filekey = $storage->store($tempfile, $realname);
 
     // store the file to the repository
-    $filekey = $storage->key;
     $column = $this->column;
     $this->model->$column = $filekey;
+    $this->after_store($storage, $filekey);
 
     return $storage->path($filekey);
+  }
+
+
+  public function validate(array $intercepted)
+  {
+    $upload = new Upload($intercepted);
+    if ($this->before_validate($upload) === false) return null;
+    if(! $upload->is_valid())
+    {
+      // TODO to lazy to make an exception class ATM.
+      throw new \Exception(print_r($upload->messages, true));
+    }
+    return $upload;
   }
 
 
@@ -172,7 +175,10 @@ class Filer {
   }
 
 
-  public function get_storage()
+  /*
+   * return a new storage instance
+   */
+  public function storage()
   {
     #return IoC::resolve('attachy.storage');
     throw new \Exception("ghetto storage factory method must be overriden");
@@ -197,6 +203,8 @@ class Filer {
     // optionally overide this method to perform actions on the file 
     // before the store() method is run;
   public function before_store($file) { return true; }
+
+  public function after_store($storage, $filekey) { return true; }
 
 
 }

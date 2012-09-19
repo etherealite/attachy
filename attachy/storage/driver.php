@@ -1,41 +1,33 @@
 <?php namespace Attachy\Storage;
 
-class Driver {
 
-  public $base;
-  public $regex = '/[^A-Za-z0-9_\-]/';
-  public $strategy;
+abstract class Driver {
 
-  public function store($source, $filename = null)
+  public $characters = '/[^A-Za-z0-9_\-\.]/';
+  public $extensions = '/\.(php|phtml|ph[3-6]|phpsh)$/';
+
+  public function store($source, $filename)
   {
-    if ($filename === null) $filename = basename($source);
+    $characters = $this->characters;
+    $extensions = $this->extensions;
+    $escaped = $this->escape($filename, $characters, $extensions); 
 
-    $strategy = $this->strategy;
-
-    $escaped = $this->escape($filename, $this->regex);
-    $key = $strategy::key($escaped);
-    $directory = $strategy::directory($key);
-    $this->allocate($directory);
-    $this->copy($source, $directory);
+    return $this->deposit($source, $filename);
   }
 
 
-  public function path($key = null)
+  public function escape($filename, $characters, $extensions)
   {
-    if ($key === null) $key = $this->key;
-    return $this->file_path;
+    $filename = preg_replace($characters, '_', $filename);
+
+    $filename = preg_replace($extensions, '', $filename);
+    return $filename;
   }
 
 
-  public function escape($filename, $regex)
-  {
-    return preg_replace($regex, '_', $filename);
-  }
+  abstract public function deposit($source, $filename);
+
+  abstract public function path($key = null);
 
 
-
-  public function key()
-  {
-    return this->$key
-  }
 }
