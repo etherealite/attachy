@@ -87,6 +87,7 @@ abstract class Filer {
     // model attribute where file post meta or file path
     // string is located.
     $attribute = $this->form_key;
+    if ($this->before_intercept() === false) return null;
     $intercepted = $this->intercept($this->model, $attribute);
     if( empty($intercepted)) return null;
     // if the request is coming from the cli you can optionaly
@@ -199,6 +200,7 @@ abstract class Filer {
   public function directory() { return null; }
 
 
+  public function before_intercept() { return true; }
   public function before_validate($upload) { return true; }
     // optionally overide this method to perform actions on the file 
     // before the store() method is run;
