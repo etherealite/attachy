@@ -6,14 +6,16 @@ use Laravel\Database\Eloquent\Model as Eloquent;
 
 abstract class Filer {
 
+  public $version;
+
   /*
-   * object pool for caching instances
+   * object pool for caching versions
    *
    * @todo emplement methods to actually use this.
    *
    * @var array
    */
-  public static $instances = array();
+  public $versions = array();
 
 
   /*
@@ -58,10 +60,10 @@ abstract class Filer {
    */
   public static function attach($column, $model)
   {
-      $filer =  new static($column, $model);
-      $filer->column = $column;
-      $filer->model = $model;
-      return $filer;
+    $filer = new static($column, $model);
+    $filer->column = $column;
+    $filer->model = $model;
+    return $filer;
   }
 
 
@@ -82,8 +84,17 @@ abstract class Filer {
   }
 
 
-  public function save()
+  public function version($version)
   {
+    $instance = static::attach($this->model, $this->version);
+    $instance->set_version($version);
+    $this->versions[$version] = $instance;
+  }
+
+
+  public function save($version = null)
+  {
+    if ($version !== null) $this->save_versions;
     // model attribute where file post meta or file path
     // string is located.
     $attribute = $this->form_key;
@@ -125,6 +136,10 @@ abstract class Filer {
     return $storage->path($filekey);
   }
 
+  public function save_versions()
+  {
+
+  }
 
   public function validate(array $intercepted)
   {
@@ -175,6 +190,10 @@ abstract class Filer {
     return $value;
   }
 
+  public function set_version($version)
+  {
+    $this->version = $version;
+  }
 
   /*
    * return a new storage instance

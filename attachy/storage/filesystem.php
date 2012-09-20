@@ -4,8 +4,19 @@ use Attachy\Strategy;
 
 class FileSystem extends Driver {
 
-  public $basepath;
+  protected $filekey;
+  protected  $basepath;
   public $strategy = "Attachy\Strategy\GUID";
+
+  public function set_filekey($filekey)
+  {
+    $this->filekey = $filekey;
+  }
+
+  public function get_filekey()
+  {
+    return $this->filekey;
+  }
 
   public function set_basepath($path)
   {
@@ -23,12 +34,18 @@ class FileSystem extends Driver {
     return $basepath;
   }
 
+
   public function deposit($source, $filename)
   {
     $strategy = $this->strategy;
     $basepath = $this->get_basepath();
 
-    $filekey = $strategy::filekey($filename);
+    $filekey = $this->filekey;
+    if ($filekey === null)
+    {
+      $filekey = $strategy::filekey($filename);
+      $this->set_filekey($filekey);
+    }
     $destination = $strategy::locate($basepath, $filekey);
     mkdir(dirname($destination), 0770, true);
     copy($source, $destination);
