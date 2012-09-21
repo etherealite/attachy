@@ -118,7 +118,6 @@ abstract class Filer {
       $tempfile = $upload->tempfile;
       $realname = $upload->name;
     }
-    $storage = $this->storage();
     // subclasses can optionally end processing of the upload by
     // overloading this method and returning false.
     if ( $this->before_store($storage, $upload) === false)
@@ -126,19 +125,20 @@ abstract class Filer {
       return null;
     }
 
-    $filekey = $storage->store($tempfile, $realname);
 
     // store the file to the repository
     $column = $this->column;
-    $this->model->$column = $filekey;
     $this->after_store($storage, $filekey);
 
-    return $storage->path($filekey);
+    $this->model->$column = $filekey;
   }
 
-  public function save_versions()
+  public function store($tempfile, $realname, $filekey = null)
   {
-
+    $storage = $this->storage();
+    if ($filekey === null)
+    $filekey = $storage->store($tempfile, $realname);
+    return $storage->path($filekey);
   }
 
   public function validate(array $intercepted)
