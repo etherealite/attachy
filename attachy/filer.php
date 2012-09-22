@@ -6,7 +6,22 @@ use Laravel\Database\Eloquent\Model as Eloquent;
 
 abstract class Filer {
 
+  /*
+   * The key for the eloquent $attribute property that we're
+   * going to intercept.
+   *
+   * @var string
+   */
+  public $form_key;
+
+
+  /*
+   * The version of this filer instance
+   *
+   * @var string
+   */
   public $version;
+
 
   /*
    * object pool for caching versions
@@ -19,12 +34,12 @@ abstract class Filer {
 
 
   /*
-   * The key for the eloquent $attribute property that we're
-   * going to intercept.
+   * builders used in making versions
    *
-   * @var string
+   * @var array
    */
-  public $form_key;
+  public $builders = array();
+
 
   /*
    * The Eloquent model instance to draw from.
@@ -33,12 +48,14 @@ abstract class Filer {
    */
   public $model;
 
+
   /*
    * The key for the aloquent attribute save filekeys.
    *
    * @var string
    */
   public $column;
+
 
   /* Uploader instance to hold and validate post meta.
    *
@@ -63,7 +80,21 @@ abstract class Filer {
     $filer = new static($column, $model);
     $filer->column = $column;
     $filer->model = $model;
+    $filer->storage = $this->get_storage();
     return $filer;
+  }
+
+
+  /*
+   * return the given version of the Filer
+   *
+   * @param  string $version
+   */
+  public function version($version)
+  {
+    $instance = static::attach($this->model, $this->version);
+    $instance->set_version($version);
+    $this->versions[$version] = $instance;
   }
 
 
@@ -84,20 +115,12 @@ abstract class Filer {
   }
 
 
-  public function version($version)
+  public function save()
   {
-    $instance = static::attach($this->model, $this->version);
-    $instance->set_version($version);
-    $this->versions[$version] = $instance;
-  }
-
-
-  public function save($version = null)
-  {
-    if ($version !== null) $this->save_versions;
     // model attribute where file post meta or file path
     // string is located.
     $attribute = $this->form_key;
+
     if ($this->before_intercept() === false) return null;
     $intercepted = $this->intercept($this->model, $attribute);
     if( empty($intercepted)) return null;
@@ -125,12 +148,35 @@ abstract class Filer {
       return null;
     }
 
+    // set the value of the mounted model column to the filekey
+    // given to us after storing the file.
+    $this->update_model($filekey);
+    $this->update_verions();
 
     // store the file to the repository
-    $column = $this->column;
     $this->after_store($storage, $filekey);
 
+  }
+
+
+  public function save_versions()
+  {
+    foreach(array_values($this->versions) as $version)
+    {
+      if ($version->exists())
+      {
+        // do some stuff lol
+      }
+    }
+
+  }
+
+
+  public function update_model($filekey)
+  {
+    $column = $this->column;
     $this->model->$column = $filekey;
+
   }
 
   public function store($tempfile, $realname, $filekey = null)
@@ -161,7 +207,7 @@ abstract class Filer {
    */
   public function retrieve()
   {
-    $storage = $this->get_storage();
+    $storage = $this->get_storage($this->version);
     $column = $this->column;
     $filekey = $this->model->$column;
     return $storage->path($filekey);
@@ -190,18 +236,24 @@ abstract class Filer {
     return $value;
   }
 
+  public function storage()
+  {
+    $version = $this->version;
+    $instance = get_called_class().'.'.'storage: '.$version;
+    if ( ! IoC::registered($instance))
+    {
+      $storage = new Attachy\Storage\FileSystem;
+      $storage->set_basepath(path('public').'fonts'.DS.'png_title');
+      IoC::instance($instance, $storage);
+      return $storage;
+    }
+      return IoC::resolve($instance);
+  }
+
+
   public function set_version($version)
   {
     $this->version = $version;
-  }
-
-  /*
-   * return a new storage instance
-   */
-  public function storage()
-  {
-    #return IoC::resolve('attachy.storage');
-    throw new \Exception("ghetto storage factory method must be overriden");
   }
 
 
