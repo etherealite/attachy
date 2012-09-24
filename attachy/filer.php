@@ -6,6 +6,14 @@ use Laravel\Database\Eloquent\Model as Eloquent;
 
 abstract class Filer {
 
+
+  /* auto save all registered versions
+   *
+   * @var boolean
+   */
+  public $auto_save = true;
+
+
   /*
    * The key for the eloquent $attribute property that we're
    * going to intercept.
@@ -38,7 +46,7 @@ abstract class Filer {
    *
    * @var array
    */
-  public $builders = array();
+  public $registered = array();
 
 
   /*
@@ -151,7 +159,10 @@ abstract class Filer {
     // set the value of the mounted model column to the filekey
     // given to us after storing the file.
     $this->update_model($filekey);
-    $this->update_verions();
+    if ($this->auto_save)
+    {
+      $this->save_verions();
+    }
 
     // store the file to the repository
     $this->after_store($storage, $filekey);
@@ -159,7 +170,40 @@ abstract class Filer {
   }
 
 
-  public function save_versions()
+  public function build_version($version)
+  {
+    if ( ! in_array($version, array_keys($this->registered)))
+    {
+      throw new Exception("version not registered");
+    }
+    $builder = $this->registered[$version];
+
+    $filer = clone $this;
+    $builder($filer);
+    $this->versions[$version] = $filer;
+
+    return $filer;
+  }
+
+
+  public function save_version($version)
+  {
+    if ( ! in_array($version, array_keys($this->versions)))
+    {
+      $this->build_version($version);
+    }
+    $filer = $this->versions[$version];
+
+    $version_path = $this->storage->get_basepath();
+    if ($version_path === $this->storage->get_basepath())
+    {
+      $filer->storage->set_basepath($version_path.DS.$version);
+    }
+
+  }
+
+
+  public function save_versions($version)
   {
     foreach(array_values($this->versions) as $version)
     {
