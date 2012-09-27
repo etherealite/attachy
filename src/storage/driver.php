@@ -7,6 +7,7 @@ abstract class Driver {
   public $extensions = '/\.(php|phtml|ph[3-6]|phpsh)$/';
 
 
+
   public function store($source, $filename)
   {
     $characters = $this->characters;

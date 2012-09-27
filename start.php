@@ -5,7 +5,7 @@ Autoloader::directories(array(
 ));
 
 Autoloader::namespaces(array(
-  'Attachy' => __DIR__.'/attachy'
+  'Attachy' => __DIR__.'/src'
 ));
 
 Autoloader::alias('Attachy\Filer', 'Filer');

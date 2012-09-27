@@ -62,4 +62,19 @@ class FileSystem extends Driver {
     return $location;
   }
 
+
+  /*
+   * Join an absolute directory path with a relative path
+   * or basename.
+   *
+   * @param string   $absolute
+   * @param string   $relative
+   *
+   * @return string
+   */
+  public function path_join($absolute, $relative)
+  {
+    return $absolute.DS.$relative;
+  }
+
 }
