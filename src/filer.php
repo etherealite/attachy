@@ -109,6 +109,30 @@ abstract class Filer {
   }
 
 
+  /*
+   * Save a lazy loaded version from version builders to storage
+   *
+   * @param array  $versions
+   *
+   */
+  public function save_versions($versions)
+  {
+    // allow the function take both arrays and strings as arguments.
+    if ( ! is_array($versions)) $versions = array($versions);
+
+    foreach ($versions as $version)
+    {
+      if ( ! in_array($version, array_keys(static::$versions)))
+      {
+        static::build_version($version);
+      }
+      $filer = static::$versions[$version];
+      $path = $this->retrieve();
+      $filer->store($path
+    }
+
+  }
+
   /* 
    * Build a new Filer instance based on the instructions provided
    * by a registered version building closure
@@ -132,7 +156,19 @@ abstract class Filer {
       $builder = static::$registered[$version];
 
       $filer = new static;
-      $builder($filer, $file);
+      $filer->set_version($version);
+      $filer->storage($version);
+      $builder($filer);
+      $version_path = $filer->storage->get_basepath();
+      // when a new path is not manually set by the version builder we
+      // automatically create a new 'basepath' for the version as 
+      // a subdirectory in the basepath for the parent version with the
+      // name of the version being saved.
+      if ($version_path === $this->storage->get_basepath())
+      {
+        $new_path = $filer->storage->path_join($version_path, $version);
+        $filer->storage->set_basepath($version_path.DS.$version);
+      }
       static::$versions[$version] = $filer;
     }
   }
@@ -222,40 +258,6 @@ abstract class Filer {
 
 
   /*
-   * Save a lazy loaded version from version builders
-   *
-   * @param array  $versions
-   *
-   */
-  public function save_versions($versions)
-  {
-    // allow the function take both arrays and strings as arguments.
-    if ( ! is_array($versions)) $versions = array($versions);
-
-    foreach ($versions as $version)
-    {
-      if ( ! in_array($version, array_keys(static::$versions)))
-      {
-        static::build_version($version);
-      }
-      $filer = static::$versions[$version];
-
-      $version_path = $filer->storage->get_basepath();
-      // when a new path is not manually set by the version builder we
-      // automatically create a new 'basepath' for the version as 
-      // a subdirectory in the basepath for the parent version with the
-      // name of the version being saved.
-      if ($version_path === $this->storage->get_basepath())
-      {
-        $new_path = $filer->storage->path_join($version_path, $version);
-        $filer->storage->set_basepath($version_path.DS.$version);
-      }
-    }
-
-  }
-
-
-  /*
    * Store the 'filekey' of the file handled by an instance to 
    * the Eloquent model
    *
@@ -292,7 +294,7 @@ abstract class Filer {
   {
     $upload = new Upload($intercepted);
     if ($this->before_validate($upload) === false) return null;
-    if(! $upload->is_valid())
+    if( ! $upload->is_valid())
     {
       // TODO to lazy to make an exception class ATM.
       throw new \Exception(print_r($upload->messages, true));
@@ -377,6 +379,15 @@ abstract class Filer {
     $this->version = $version;
   }
 
+  public function set_basepath($path)
+  {
+    $this->storage->set_basepath($path);
+  }
+
+  public function set_extension($extension)
+  {
+    $this->storage->extension = $extension;
+  }
 
   /*
    * register any transformations to perform on source file
@@ -401,10 +412,6 @@ abstract class Filer {
   {
     return $this->retrieve();
   }
-
-
-  // you must override this function to set the store directory.
-  public function directory() { return null; }
 
 
   public function before_intercept() { return true; }
