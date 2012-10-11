@@ -69,7 +69,7 @@ abstract class Filer {
    *
    * @var string
    */
-  public $version;
+  public $version = "default";
 
   /*
    * File transformations to apply to files handled by this
@@ -347,7 +347,7 @@ abstract class Filer {
    *
    * @return Attachy\Storage\Filesystem
    */
-  public function storage($version)
+  public function storage($version, $path = null)
   {
     if ( ! $this->storage === null)
     {
