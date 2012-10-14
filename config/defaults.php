@@ -1,7 +1,10 @@
 <?php
 
 return array(
-  "strategy" => "GUID",
-  "driver" => "filesystem",
+  "storage" => array(
+    "strategy" => "GUID",
+    "driver" => "filesystem",
+    "directory" => path('public'),
+  ),
   "filers" => path('app').'attachy'
 );

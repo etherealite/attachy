@@ -63,6 +63,11 @@ abstract class Filer {
    */
   public $upload;
 
+  /* Storage instance to implement file system functionality.
+   *
+   * @var Attachy\Storage
+   */
+  public $storage;
 
   /*
    * The version of this filer instance
@@ -70,6 +75,7 @@ abstract class Filer {
    * @var string
    */
   public $version = "default";
+
 
   /*
    * File transformations to apply to files handled by this
@@ -128,7 +134,7 @@ abstract class Filer {
       }
       $filer = static::$versions[$version];
       $path = $this->retrieve();
-      $filer->store($path
+      $filer->store($path);
     }
 
   }
