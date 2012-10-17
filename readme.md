@@ -54,7 +54,7 @@ class Post extends Eloquent {
   public function get_cool_pic()
   {
     // Tell Attachy to save the file identifer to the 
-    cool_pic column defined in the previously created  migration.
+    //cool_pic column defined in the previously created  migration.
     return CoolPic::attach("cool_pic", $this);
   }
 
