@@ -8,21 +8,20 @@ class FileSystem extends Driver {
   protected  $basepath;
   public $strategy = "Attachy\Strategy\GUID";
 
-  public function set_filekey($filekey)
-  {
-    $this->filekey = $filekey;
-  }
-
-  public function get_filekey()
-  {
-    return $this->filekey;
-  }
-
   public function set_basepath($path)
   {
     $this->basepath = $path;
   }
 
+  public function set_extension($extension)
+  {
+    $this->extension = $extension;
+  }
+
+  public function set_filekey($filekey)
+  {
+    $this->filekey = $filekey;
+  }
 
   public function get_basepath()
   {
@@ -32,6 +31,11 @@ class FileSystem extends Driver {
       throw new \Exception ("no base path as been set");
     }
     return $basepath;
+  }
+
+  public function get_filekey()
+  {
+    return $this->filekey;
   }
 
 

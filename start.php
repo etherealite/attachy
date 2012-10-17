@@ -1,7 +1,8 @@
 <?php
 
+$filers = Config::get('attachy.filers.location');
 Autoloader::directories(array(
-  path('app').'attachy'
+  $filers,
 ));
 
 Autoloader::namespaces(array(
