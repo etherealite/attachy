@@ -11,7 +11,7 @@ abstract class Filer {
    *
    * @var boolean
    */
-  public static $auto_save = true;
+  private static $auto_save = true;
 
 
   /*
@@ -20,7 +20,7 @@ abstract class Filer {
    *
    * @var string
    */
-  public static $form_key;
+  private static $form_key;
 
 
   /*
@@ -34,27 +34,26 @@ abstract class Filer {
 
 
   /*
-   * closure used in making versions
+   * closures used in making versions
    *
    * @var array
    */
-  public static $registered = array();
-
+  private static $registered = array();
 
   /*
    * The Eloquent model instance to draw from.
    *
    * @var Eloquent
    */
-  public $model;
+  private $model;
 
 
   /*
-   * The key for the aloquent attribute save filekeys.
+   * The name of the eloquent attribute save filekeys on.
    *
    * @var string
    */
-  public $column;
+  private $column;
 
 
   /* Uploader instance to hold and validate post meta.
@@ -62,28 +61,6 @@ abstract class Filer {
    * @var Attachy\Upload
    */
   public $upload;
-
-  /* Storage instance to implement file system functionality.
-   *
-   * @var Attachy\Storage
-   */
-  private $storage;
-
-  /*
-   * The version of this filer instance
-   *
-   * @var string
-   */
-  public $version;
-
-
-  /*
-   * File transformations to apply to files handled by this
-   * filer object.
-   *
-   * @var Closure
-   */
-  public $transformation;
 
 
   /*
@@ -100,105 +77,82 @@ abstract class Filer {
   public static function attach($column, $model)
   {
     $class = get_called_class();
-    $default = new static;
 
-    if (static::$form_key === null)
+    // try and use a preconfigured instance
+    $filer = static::get_instance($class);
+    if ($filer === null)
     {
-      static::$form_key = static::to_underscore($class);
+      $filer = new static;
+      $filer->configure();
     }
 
-    if (method_exists($class, 'has_versions'))
-    {
-      call_user_func(array($class, 'has_versions'));
-    }
-
-    if ( ! static::$builders["default"]);
-    {
-      $static::register("default", function($version)
-      {
-        $path = Config::get('attachy.storage.basepath');
-        $path .= static::to_underscore(get_called_class());
-        $version->storage->set_basepath($path);
-        $version->storage();
-      });
-    }
-
-    // name of the column to save filekey
+    // configure a new instance
+    // Eloquent model instance used to save filekey
     $filer->column = $column;
-    // Eloquent model instance to save filekey
     $filer->model = $model;
     return $filer;
   }
 
 
-  /*
-   * Save a lazy loaded version from version builders to storage
-   *
-   * @param array  $versions
-   *
-   */
-  public function save_versions($versions)
-  {
-    // allow the function take both arrays and strings as arguments.
-    if ( ! is_array($versions)) $versions = array($versions);
-
-    foreach ($versions as $version)
-    {
-      if ( ! in_array($version, array_keys(static::$versions)))
-      {
-        static::build_version($version);
-      }
-      $filer = static::$versions[$version];
-      $path = $this->retrieve();
-      $filer->store($path);
-    }
-
-  }
-
-
   /* 
-   * Build a new Filer instance based on the instructions provided
-   * by a registered version building closure
-   *
-   * @param array $versions
-   *
-   * @return void
+   * configure a new Filer instance
    */
-  public static function build_versions($versions)
+  public function configure($params)
   {
-    // allow the function to take a single string to build the version.
-    if ( ! is_array($versions)) $versions = array($versions);
 
-    foreach ($versions as $version)
+    $class = static::to_underscore(get_called_class());
+
+    if ($this->$form_key === null)
     {
-      // A closure to build the version must first be registered.
-      if ( ! in_array($version, array_keys(static::$registered)))
-      {
-        throw new Exception("version not registered");
-      }
-      $builder = static::$registered[$version];
+      // default form_key is the underscored name of the
+      // client class by convention.
+      $this->$form_key = $class;
+    }
 
-      $filer = new static;
-      $filer->set_version($version);
-      $path = $this->storage->get_basepath();
-      $version_path = $filer->storage->path_join($version_path, $version);
-      $filer->storage->set_basepath($version_path);
-      $builder($filer);
-      Ioc::instance($version
-      static::$versions[$version] = $filer;
+    // read in any registered builders defined in the client class
+    if (method_exists($this, 'has_versions'))
+    {
+      $this->has_versions();
+    }
+
+    // check if a user registered their own builder for default version.
+    if ( ! static::$builders["default"]);
+    {
+      // use our own builder for the default version.
+      $this->register("default", function($version)
+      {
+        // default behavior is a sub-dir of the base path
+        // named by the underscored class name
+        $base_path = Config::get('attachy.storage.basepath');
+        $path = $version->storage->path_join($base_path, $class);
+        $version->storage->set_basepath($path);
+      });
     }
   }
 
-  public static function version($key)
-  {
-    IoC::resolve($key)
 
+  /*
+   * Retrieve a preconfigured Filer instance
+   *
+   * @param string   $class
+   *
+   * @return Attachy\Filer
+   */
+  public function get_instance($class = null)
+  {
+    if ($class === null) $class = get_called_class();
+    $key = "Attachy: $class";
+    if ( ! IoC::registered($key)) return null;
+    else return IoC::resolve($key);
   }
+
+
 
   public static function register($key, Closure $builder)
   {
     static::$builders[$key] = $builder;
   }
+
 
   /*
    * Attach a listner to an eloquent event for an instance of this
@@ -272,7 +226,8 @@ abstract class Filer {
     $this->update_model($filekey);
     if ($this->auto_versions)
     {
-      $this->save_verions();
+      $all = array_keys(static::$registered);
+      $this->save_verions($all);
     }
     else
     {
@@ -301,15 +256,6 @@ abstract class Filer {
   }
 
 
-  public function store($tempfile, $realname, $filekey = null)
-  {
-    $storage = $this->storage();
-    if ($filekey === null)
-    $filekey = $storage->store($tempfile, $realname);
-    return $storage->path($filekey);
-  }
-
-
   /*
    * validate the file contents of a post file upload
    * array in the same structure as the $_FILES superglobal.
@@ -329,20 +275,6 @@ abstract class Filer {
       throw new \Exception(print_r($upload->messages, true));
     }
     return $upload;
-  }
-
-
-  /*
-   * retieve the path to the file.
-   * 
-   * @return string
-   */
-  public function retrieve()
-  {
-    $storage = $this->storage;
-    $column = $this->column;
-    $filekey = $this->model->$column;
-    return $storage->path($filekey);
   }
 
 
@@ -370,59 +302,71 @@ abstract class Filer {
 
 
   /*
-   * Load, create or cache a storage instance as necessary
+   * Save a lazy loaded version from version builders to storage
    *
-   * @param string   $version
+   * @param array  $versions
    *
-   * @return Attachy\Storage\Filesystem
    */
-  public function storage($instance = null)
+  public function save_versions($versions)
   {
-    $version = $this->version;
-    $key = get_called_class().'.'.'storage: '.$version;
+    // allow the function take both arrays and strings as arguments.
+    if ( is_string($versions)) $versions = array($versions);
 
-    if ($instance !== null)
+    $missing = array_diff($versions, array_keys(static::$versions));
+    static::build($missing);
+
+    foreach ($versions as $version)
     {
-      IoC::instance($key, $instance);
-    }
-    elseif ( ! IoC::registered($key))
-    {
-      $storage = new Attachy\Storage\FileSystem;
-      $storage->set_basepath
-        (
-        );
-      IoC::instance($key, $storage);
+      $version = static::$versions[$version];
+      $path = $version->retrieve();
+      $filer->store($path);
     }
 
-    return IoC::resolve($key);
   }
 
 
-
   /* 
-   * set the version of the filer instance
+   * Build a new Filer instance based on the instructions provided
+   * by a registered version building closure
    *
-   * @param string $version
+   * @param array $versions
    *
    * @return void
    */
-  public function set_version($version)
+  public static function build($versions)
   {
-    $this->version = $version;
+    // allow the function to take a single string to build the version.
+    if ( ! is_array($versions)) $versions = array($versions);
+
+    foreach ($versions as $name)
+    {
+      // A closure to build the version must first be registered.
+      if ( ! in_array($version, array_keys(static::$registered)))
+      {
+        throw new Exception("version not registered");
+      }
+      $builder = static::$registered[$name];
+
+      $version = Version::get_instance();
+      $storage = $this->version('default')->storage;
+
+      $path = $storage->get_basepath();
+      $version->storage->set_basepath($storage->path_join($path, $name));
+      $builder($version);
+      static::$versions[$name] = $version;
+    }
   }
 
 
   /*
-   * register any transformations to perform on source file
-   * before saving
+   * Return a version instance when called as a function.
    *
-   * @param Closure $transforms
-   *
-   * @return void
+   *@param   string  $version
+   *@return  Attachy\Version
    */
-  public function tranfsorm(Closure $transform)
+  public function __invoke($version = 'default')
   {
-    $this->transformation = $transform;
+    return $this->version($version);
   }
 
 
@@ -433,16 +377,18 @@ abstract class Filer {
    */
   public function __toString()
   {
-    return $this->retrieve();
+    return $this->version('default')->retrieve();
   }
 
-  public function __get($key)
+
+  /*
+   * Handle dynamic method calls
+   *
+   * @param string   $version
+   * @return mixed
+   */
+  public function __get($version)
   {
-    if ($key === 'storage')
-    {
-      if $this->storage !== null) return $this->storage;
-      else  return $this->storage();
-    }
 
   }
 
