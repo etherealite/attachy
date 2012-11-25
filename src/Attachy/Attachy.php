@@ -4,7 +4,14 @@ use Attachy\Storage;
 use Laravel\Request;
 use Laravel\Database\Eloquent\Model as Eloquent;
 
-abstract class Filer {
+abstract class Attachy {
+
+  /*
+   * instance of the strategy used in saving files
+   *
+   * @var \Attachy\Strategy
+   */
+  private static $strategy;
 
 
   /* auto save all registered versions
@@ -24,7 +31,7 @@ abstract class Filer {
 
 
   /*
-   * object pool for caching versions
+   * object pool version flyweights
    *
    * @todo emplement methods to actually use this.
    *
@@ -49,7 +56,7 @@ abstract class Filer {
 
 
   /*
-   * The name of the eloquent attribute save filekeys on.
+   * The name of the eloquent attribute to save filekeys on.
    *
    * @var string
    */
