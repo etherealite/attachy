@@ -1,5 +1,5 @@
 {
-    "name": "attachy/attachy-laravel-bundle",
+    "name": "attachy/attachy",
     "type": "library",
     "description": "Upload handling automation",
     "keywords": ["upload","file","database"],
