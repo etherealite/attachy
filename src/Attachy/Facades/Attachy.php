@@ -1,4 +1,4 @@
-<?php Attachy\Facades;
+<?php namespace Attachy\Facades;
 
 use Illuminate\Support\Facade;
 
