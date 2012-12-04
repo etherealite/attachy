@@ -17,7 +17,8 @@ class AttachyServiceProvider extends ServiceProvider {
   {
     $this->app['attachy'] = $this->app->share(function($app)
     {
-      return new Attachy;
+      $config = $this->$app['config']['attachy'];
+      return new Attachy($config);
     });
   }
 
