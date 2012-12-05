@@ -7,15 +7,15 @@
 return array(
   "storage" => array(
     "strategy" => "GUID",
-    "driver" => "filesystem",
-    "basepath" => path('public'),
+    "driver" => "FileSystem",
+    "basepath" => $app['path'] . '/public',
   ),
   "filers" => array(
-    "location" => path('app').'attachy',
+    "location" => $app['path'].'/filers',
     ),
-  "class_name" => array(
-    "version_name" => array(
-      "path" => "/some/dir"
-      )
-    )
+  #"FilerName" => array(
+  #  "VersionName" => array(
+  #    "path" => "/some/dir"
+  #    )
+  #  )
   );
